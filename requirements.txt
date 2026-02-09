@@ -1,0 +1,15 @@
+fastapi
+openai
+python-dotenv
+uvicorn
+pydantic
+python-multipart
+sqlalchemy
+psycopg2-binary
+qdrant-client
+supabase
+streamlit
+requests
+fastembed
+dash
+dash-bootstrap-components
