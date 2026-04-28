@@ -2,6 +2,9 @@ import os
 import uuid
 from supabase import create_client, Client
 from fastapi import UploadFile
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 def get_supabase_client() -> Client:
     url = os.getenv("SUPABASE_URL")
@@ -19,24 +22,20 @@ async def upload_image_to_supabase(file: UploadFile, bucket_name: str = "job-pos
     file_ext = file.filename.split(".")[-1]
     file_name = f"{uuid.uuid4()}.{file_ext}"
     
-    # Read file content
     content = await file.read()
     
-    # Reset cursor for other readers
     await file.seek(0)
     
     try:
-        # Upload
         supabase.storage.from_(bucket_name).upload(
             path=file_name,
             file=content,
             file_options={"content-type": file.content_type}
         )
         
-        # Get Public URL
         public_url = supabase.storage.from_(bucket_name).get_public_url(file_name)
         return public_url
         
     except Exception as e:
-        print(f"Supabase upload error: {e}")
+        logger.error("Supabase upload error: %s", e)
         raise e

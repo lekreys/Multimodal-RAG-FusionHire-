@@ -7,7 +7,6 @@ from database.database import engine
 
 def migrate():
     with engine.connect() as conn:
-        # Add extra_data column (metadata is reserved in SQLAlchemy)
         try:
             conn.execute(text("""
                 ALTER TABLE conversations 

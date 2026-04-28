@@ -10,8 +10,10 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from bs4 import BeautifulSoup
 
-# Use shared driver factory
 from utils.selenium_driver import create_chrome_driver
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class LokerScraper:
@@ -23,7 +25,6 @@ class LokerScraper:
         self.query = ""
     
     def _create_driver(self) -> webdriver.Chrome:
-        """Create Chrome WebDriver using shared factory."""
         return create_chrome_driver(headless=self.headless, window_size="1920,1080")
     
     def _generate_job_id(self, url: str) -> str:
@@ -37,7 +38,7 @@ class LokerScraper:
                         progress_callback: Callable[[str], None] = None) -> List[str]:
 
         def log(msg: str):
-            print(msg)
+            logger.info(msg)
             if progress_callback:
                 progress_callback(msg)
         
@@ -45,7 +46,7 @@ class LokerScraper:
         self.query = query
         
         log(f"\n{'='*50}")
-        log(f"📋 SCRAPING LOKER.ID URLS (Query: '{query}', Pages 1-{max_page})")
+        log(f" SCRAPING LOKER.ID URLS (Query: '{query}', Pages 1-{max_page})")
         log(f"{'='*50}")
         
         driver = self._create_driver()
@@ -58,7 +59,7 @@ class LokerScraper:
                 else:
                     url = f"{self.BASE_URL}/page/{page}?q={quote(query)}"
                 
-                log(f"\n📄 Page {page}/{max_page}: Loading...")
+                log(f"\n Page {page}/{max_page}: Loading...")
                 driver.get(url)
                 
                 WebDriverWait(driver, 15).until(
@@ -74,7 +75,7 @@ class LokerScraper:
                 log(f"   Found {len(cards)} job cards")
                 
                 if not cards:
-                    log("   ⚠️ No cards found, stopping pagination")
+                    log("    No cards found, stopping pagination")
                     break
                 
                 for card in cards:
@@ -86,22 +87,21 @@ class LokerScraper:
                     except:
                         pass
                 
-                log(f"   ✅ Collected {len(all_links)} unique URLs so far")
+                log(f"    Collected {len(all_links)} unique URLs so far")
                 time.sleep(2)
                 
         except Exception as e:
-            log(f"   ❌ Error: {e}")
+            log(f"    Error: {e}")
         finally:
             driver.quit()
         
         log(f"\n{'='*50}")
-        log(f"✅ URL COLLECTION COMPLETE: {len(all_links)} URLs")
+        log(f" URL COLLECTION COMPLETE: {len(all_links)} URLs")
         log(f"{'='*50}")
         
         return all_links
     
     def _scrape_job_detail_with_driver(self, driver: webdriver.Chrome, url: str) -> Dict[str, Any]:
-        """Scrape individual job page using existing driver (optimized)."""
 
         def normalize_education(s: str) -> str:
             if not s:
@@ -269,32 +269,22 @@ class LokerScraper:
 
         return glints_style
 
-    def scrape_job_detail(self, url: str) -> Dict[str, Any]:
-        """Scrape individual job page (creates new driver - for single job use)."""
-        driver = self._create_driver()
-        try:
-            return self._scrape_job_detail_with_driver(driver, url)
-        finally:
-            driver.quit()
-    
     def scrape_all_jobs(self, urls: List[str],
                         progress_callback: Callable[[str], None] = None) -> List[Dict[str, Any]]:
-        """Scrape all job details (OPTIMIZED: reuses single driver)."""
 
         def log(msg: str):
-            print(msg)
+            logger.info(msg)
             if progress_callback:
                 progress_callback(msg)
         
         log(f"\n{'='*50}")
-        log(f"🔍 SCRAPING {len(urls)} JOB DETAILS FROM LOKER.ID")
+        log(f" SCRAPING {len(urls)} JOB DETAILS FROM LOKER.ID")
         log(f"{'='*50}")
         
         jobs = []
         successful = 0
         failed = 0
         
-        # Create driver ONCE and reuse for all jobs
         driver = self._create_driver()
         
         try:
@@ -306,24 +296,23 @@ class LokerScraper:
                     
                     if "error" in job:
                         failed += 1
-                        log(f"   ❌ Error: {job['error']}")
+                        log(f"    Error: {job['error']}")
                     else:
                         successful += 1
                         jobs.append(job)
-                        log(f"   ✅ {job.get('title', 'N/A')} @ {job.get('company', 'N/A')}")
+                        log(f"    {job.get('title', 'N/A')} @ {job.get('company', 'N/A')}")
                         
                 except Exception as e:
                     failed += 1
-                    log(f"   ❌ Exception: {e}")
+                    log(f"    Exception: {e}")
                 
-                # Rate limiting (reduced since no driver restart overhead)
                 time.sleep(1.5)
         
         finally:
             driver.quit()
         
         log(f"\n{'='*50}")
-        log(f"✅ SCRAPING COMPLETE: {successful}/{len(urls)} successful")
+        log(f"SCRAPING COMPLETE: {successful}/{len(urls)} successful")
         log(f"{'='*50}")
         
         return jobs

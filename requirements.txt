@@ -1,4 +1,7 @@
 fastapi
+passlib[bcrypt]
+python-jose[cryptography]
+email-validator
 openai
 python-dotenv
 uvicorn
@@ -10,6 +13,12 @@ qdrant-client
 supabase
 streamlit
 requests
+httpx
 fastembed
 dash
 dash-bootstrap-components
+selenium
+beautifulsoup4
+webdriver-manager
+pandas
+openpyxl

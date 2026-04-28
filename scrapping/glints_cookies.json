@@ -1,7 +1,7 @@
 [
     {
         "domain": ".glints.com",
-        "expirationDate": 1770316119,
+        "expirationDate": 1773061912,
         "hostOnly": false,
         "httpOnly": false,
         "name": "sessionLastTouchPath",
@@ -14,7 +14,7 @@
     },
     {
         "domain": ".glints.com",
-        "expirationDate": 1804874319.691016,
+        "expirationDate": 1807620082.312853,
         "hostOnly": false,
         "httpOnly": false,
         "name": "_ga_FQ75P4PXDH",
@@ -23,11 +23,11 @@
         "secure": false,
         "session": false,
         "storeId": null,
-        "value": "GS2.1.s1770314319$o19$g0$t1770314319$j60$l0$h0"
+        "value": "GS2.1.s1773060068$o23$g1$t1773060082$j46$l0$h0"
     },
     {
         "domain": "glints.com",
-        "expirationDate": 1772216466.086281,
+        "expirationDate": 1775652079.232172,
         "hostOnly": true,
         "httpOnly": true,
         "name": "session",
@@ -36,11 +36,11 @@
         "secure": true,
         "session": false,
         "storeId": null,
-        "value": "Fe26.2**5cca6903356350a9c9d532ef6c07c68558f1715a827f1ae5ccc863c9fe53dce3*pedLuum7Tk_JY2Ncg570DQ*0Q7ft0b-gWCKb4pXjYnGWV_MXfelAtjn7BlxtZNfJFFlkEvVn-EASFsK10juTg8T**3f4a6edae3d74ebd9616b3109f2bae85d34561b334d05331b07b858e0c2d8028*UDgCafj6vpDGHxPiQFXeW734YFvQoOijXeBV9tOADec"
+        "value": "Fe26.2**f2fa6528541c2f90b0a0aaf847dc0b0c227e0dffc847f8656af5ccd813805459*7Rfnv-kwQtmyUlN7P6veIg*Bib8cnGmqgrMM1mkKI8e1luUe5Q9q__WRoiKmxQOkHdRl8lwrxantXXFFFe6JNHz**06b0e3faafa32897657db84c17adb401127281975776c40477c0df92e84b4d34*ocVxprxx4JU_IZpDGiANINzSvVMKKMvlY18LpqFs4Gg"
     },
     {
         "domain": "glints.com",
-        "expirationDate": 1771340146.841708,
+        "expirationDate": 1774545890.808613,
         "hostOnly": true,
         "httpOnly": false,
         "name": "device_id",
@@ -49,11 +49,11 @@
         "secure": false,
         "session": false,
         "storeId": null,
-        "value": "3bc200cb-51d4-4e43-af0a-63ad9f42e550"
+        "value": "d825765c-9745-4c57-b29a-8f0f82c3c546"
     },
     {
         "domain": ".glints.com",
-        "expirationDate": 1804874320.136769,
+        "expirationDate": 1807620079.586587,
         "hostOnly": false,
         "httpOnly": false,
         "name": "airbridge_session__taplokerbyglints",
@@ -62,11 +62,11 @@
         "secure": false,
         "session": false,
         "storeId": null,
-        "value": "%7B%22id%22%3A%229b654d41-f0e2-4d44-ac2b-a8367a71165c%22%2C%22timeout%22%3A1800000%2C%22start%22%3A1770314320022%2C%22end%22%3A1770314320136%7D"
+        "value": "%7B%22id%22%3A%22b1fcc63d-8215-44dc-8ea7-18ae73c15f1d%22%2C%22timeout%22%3A1800000%2C%22start%22%3A1773060069219%2C%22end%22%3A1773060079575%7D"
     },
     {
         "domain": "glints.com",
-        "expirationDate": 1771662204.716098,
+        "expirationDate": 1773320423.961972,
         "hostOnly": true,
         "httpOnly": false,
         "name": "pastJobSearchConditions",
@@ -75,7 +75,7 @@
         "secure": true,
         "session": false,
         "storeId": null,
-        "value": "%5B%7B%22keyword%22%3A%22automation%22%2C%22country%22%3A%22ID%22%2C%22locationName%22%3A%22All%20Cities%2FProvinces%22%2C%22lowestLocationLevel%22%3A%221%22%7D%2C%7B%22keyword%22%3A%22dokter%22%2C%22country%22%3A%22ID%22%2C%22locationName%22%3A%22All%20Cities%2FProvinces%22%2C%22lowestLocationLevel%22%3A%221%22%7D%2C%7B%22keyword%22%3A%22Doctor%22%2C%22country%22%3A%22ID%22%2C%22locationName%22%3A%22All%20Cities%2FProvinces%22%2C%22lowestLocationLevel%22%3A%221%22%7D%5D"
+        "value": "%5B%7B%22keyword%22%3A%22fastapi%22%2C%22country%22%3A%22ID%22%2C%22locationName%22%3A%22All%20Cities%2FProvinces%22%2C%22lowestLocationLevel%22%3A%221%22%7D%2C%7B%22keyword%22%3A%22Java%20Springboot%20%26%20Angular%22%2C%22country%22%3A%22ID%22%2C%22locationName%22%3A%22All%20Cities%2FProvinces%22%2C%22lowestLocationLevel%22%3A%221%22%7D%2C%7B%22keyword%22%3A%22springboot%22%2C%22country%22%3A%22ID%22%2C%22locationName%22%3A%22All%20Cities%2FProvinces%22%2C%22lowestLocationLevel%22%3A%221%22%7D%5D"
     },
     {
         "domain": ".glints.com",
@@ -92,7 +92,7 @@
     },
     {
         "domain": ".glints.com",
-        "expirationDate": 1804874319.729136,
+        "expirationDate": 1807620068.80854,
         "hostOnly": false,
         "httpOnly": false,
         "name": "ab180ClientId",
@@ -105,7 +105,7 @@
     },
     {
         "domain": ".glints.com",
-        "expirationDate": 1770316119,
+        "expirationDate": 1773061912,
         "hostOnly": false,
         "httpOnly": false,
         "name": "sessionIsLastTouch",
@@ -114,11 +114,11 @@
         "secure": true,
         "session": false,
         "storeId": null,
-        "value": "true"
+        "value": "false"
     },
     {
         "domain": "glints.com",
-        "expirationDate": 1770315240,
+        "expirationDate": 1773061036,
         "hostOnly": true,
         "httpOnly": false,
         "name": "glints_tracking_id",
@@ -127,11 +127,11 @@
         "secure": false,
         "session": false,
         "storeId": null,
-        "value": "364ab87d-b0cb-4ecd-a093-cb3c8bda2cb7"
+        "value": "fbee35fc-03a5-43a4-bd88-cf94c3ca6383"
     },
     {
         "domain": ".glints.com",
-        "expirationDate": 1804874319.683444,
+        "expirationDate": 1807620068.73942,
         "hostOnly": false,
         "httpOnly": false,
         "name": "_ga",
@@ -157,7 +157,7 @@
     },
     {
         "domain": "glints.com",
-        "expirationDate": 1785176466,
+        "expirationDate": 1788612078,
         "hostOnly": true,
         "httpOnly": false,
         "name": "g_state",
@@ -166,7 +166,19 @@
         "secure": false,
         "session": false,
         "storeId": null,
-        "value": "{\"i_l\":0,\"i_ll\":1769624458891}"
+        "value": "{\"i_l\":0,\"i_ll\":1773060071678,\"i_e\":{\"enable_itp_optimization\":0}}"
+    },
+    {
+        "domain": "glints.com",
+        "hostOnly": true,
+        "httpOnly": false,
+        "name": "traceInfo",
+        "path": "/",
+        "sameSite": "no_restriction",
+        "secure": true,
+        "session": true,
+        "storeId": null,
+        "value": "%7B%22expInfo%22%3A%22mgtExperimentWebFYPMultRetrievals%3Abase%2CmgtDstExperimentRecmdApplication%3Abase_0210_decay_3%2CmgtDstExperimentRecmdPaidJob%3Aexp_2_1206%2CmgtDstExperimentRecmdConversionRate%3Agroup_10_0812%2CmgtDstExpSalaryWeight%3Aexp_0619_w3%2CmgtDstExpUserTrafficControlByScore%3Aexperiment%2CmgtDstExpFYPJobType%3Abase_0309%2CmgtDstExpFYPAge%3Aexp_0830_w2%2CmgtJobSourceRolloutExp%3Agroup1%2CmgtMobExperimentJobCardUI%3Aexp_new_1227%2CmgtOneTapApplyVIPJobs%3AB%22%2C%22requestId%22%3A%229ad1e046acd565afc6c4e5acd3a130eb%22%7D"
     },
     {
         "domain": ".glints.com",
@@ -183,7 +195,7 @@
     },
     {
         "domain": ".glints.com",
-        "expirationDate": 1804874319.720179,
+        "expirationDate": 1807620068.802023,
         "hostOnly": false,
         "httpOnly": false,
         "name": "airbridge_migration_metadata__taplokerbyglints",
@@ -192,11 +204,11 @@
         "secure": false,
         "session": false,
         "storeId": null,
-        "value": "%7B%22version%22%3A%221.11.1%22%7D"
+        "value": "%7B%22version%22%3A%221.11.4%22%7D"
     },
     {
         "domain": ".glints.com",
-        "expirationDate": 1804230503.747499,
+        "expirationDate": 1807620081.224367,
         "hostOnly": false,
         "httpOnly": false,
         "name": "airbridge_user__taplokerbyglints",
@@ -205,11 +217,11 @@
         "secure": false,
         "session": false,
         "storeId": null,
-        "value": "%7B%22attributes%22%3A%7B%22country_code%22%3A%22ID%22%2C%22role%22%3A%22CANDIDATE%22%2C%22has_whatsapp_number%22%3Atrue%2C%22user_email%22%3A%22lekrey.laipiopa29@gmail.com%22%2C%22days_from_signup%22%3A454%2C%22has_resume%22%3Atrue%2C%22has_mobile_number%22%3Afalse%2C%22age_in_years%22%3A%22null%22%2C%22gender%22%3A%22%22%2C%22number_of_skills_listed%22%3A0%2C%22utm_referrer%22%3A%22explore%22%7D%2C%22externalUserID%22%3A%22fb88cd44-eb0e-47f5-a8c3-6a94f4539b62%22%2C%22externalUserEmail%22%3A%22lekrey.laipiopa29@gmail.com%22%7D"
+        "value": "%7B%22externalUserID%22%3A%22fb88cd44-eb0e-47f5-a8c3-6a94f4539b62%22%2C%22externalUserEmail%22%3A%22lekrey.laipiopa29@gmail.com%22%2C%22externalUserPhone%22%3Anull%2C%22alias%22%3A%7B%7D%2C%22attributes%22%3A%7B%22country_code%22%3A%22ID%22%2C%22role%22%3A%22CANDIDATE%22%2C%22has_whatsapp_number%22%3Atrue%2C%22user_email%22%3A%22lekrey.laipiopa29@gmail.com%22%2C%22days_from_signup%22%3A493%2C%22has_resume%22%3Atrue%2C%22has_mobile_number%22%3Afalse%2C%22age_in_years%22%3A%22null%22%2C%22gender%22%3A%22%22%2C%22number_of_skills_listed%22%3A0%7D%7D"
     },
     {
         "domain": "glints.com",
-        "expirationDate": 1770316119,
+        "expirationDate": 1773061867,
         "hostOnly": true,
         "httpOnly": false,
         "name": "builderSessionId",
@@ -218,11 +230,23 @@
         "secure": true,
         "session": false,
         "storeId": null,
-        "value": "be1655ba299242869e824da57c366340"
+        "value": "b726a4c83cf447898442126a0d5741a0"
+    },
+    {
+        "domain": "glints.com",
+        "hostOnly": true,
+        "httpOnly": false,
+        "name": "currentJobID",
+        "path": "/",
+        "sameSite": null,
+        "secure": false,
+        "session": true,
+        "storeId": null,
+        "value": "48b57ec8-bcab-49f7-8534-109795cb9ba1"
     },
     {
         "domain": ".glints.com",
-        "expirationDate": 1770919119,
+        "expirationDate": 1773664912,
         "hostOnly": false,
         "httpOnly": false,
         "name": "sessionFirstTouchPath",

@@ -1,43 +1,49 @@
 import os
 from typing import List, Union
 
-from openai import OpenAI
+from utils.sparse import text_to_sparse_vector
+from utils.idf_cache import get_idf_weights
+from utils.client import (
+    is_local, api_source,
+    call_local_embed,
+    get_embedding_client, get_embedding_model,
+)
+from utils.logger import get_logger
 
-# Use shared sparse vector utilities
-from utils.sparse import text_to_sparse_vector as sparse_query_manual
+logger = get_logger(__name__)
+
+
+def sparse_query_manual(text: str):
+    idf = get_idf_weights()
+    return text_to_sparse_vector(text, idf_weights=idf)
 
 
 def embed_openai(
     texts: Union[str, List[str]],
-    model: str = "text-embedding-3-small",
+    model: str = None,
 ) -> Union[List[float], List[List[float]]]:
-    """
-    Uses OpenRouter for Embeddings. 
-    Ensure valid model ID in .env (EMBEDDING_MODEL).
-    """
-    
-    api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
-    embedding_model = os.getenv("EMBEDDING_MODEL", "qwen/qwen-embedding")
-    
-    if not api_key:
-        raise RuntimeError("OPENROUTER_API_KEY env var is not set")
-    
-    client = OpenAI(
-        base_url="https://openrouter.ai/api/v1",
-        api_key=api_key
+
+    is_single = isinstance(texts, str)
+    texts_list = [texts] if is_single else texts
+
+    # ── Local Colab API (dengan fallback ke OpenRouter jika gagal) ──────────
+    if is_local():
+        try:
+            result = call_local_embed(texts_list)
+            return result[0] if is_single else result
+        except Exception as e:
+            logger.warning("Local embed gagal (%s), fallback ke OpenRouter...", e)
+
+    # ── OpenRouter / OpenAI embedding ────────────────────────────────────────
+    client = get_embedding_client()
+    embedding_model = get_embedding_model()
+
+    resp = client.embeddings.create(
+        model=embedding_model,
+        input=texts_list,
     )
 
-    try:
-        resp = client.embeddings.create(
-            model=embedding_model,
-            input=texts,
-        )
-    except Exception as e:
-        print(f"OpenRouter Embedding Error: {e}")
-        return [] if isinstance(texts, list) else []
-
-    if isinstance(texts, str):
+    if is_single:
         return resp.data[0].embedding
 
-    # batch
     return [item.embedding for item in resp.data]

@@ -18,20 +18,21 @@ from qdrant_client.models import (
 from openai import OpenAI
 
 from database.database import SessionLocal
-from database.models import Job
+from utils.logger import get_logger
 
-# Use shared sparse vector utilities
+logger = get_logger(__name__)
+from database.models import ITJob
+
 from utils.sparse import text_to_sparse_vector as text_to_sparse_hash_vector
+from utils.idf_cache import get_idf_weights, invalidate_cache as invalidate_idf_cache
+from utils.preprocessing import preprocess_text
+from utils.client import (
+    is_local, api_source,
+    call_local_embed,
+    get_embedding_client, get_embedding_model,
+)
 
 
-
-
-# Sparse vector function imported from utils.sparse
-
-
-# =========================
-# 1) SAVE TO SQL DB
-# =========================
 def save_documents_database(
     payload: Union[Dict[str, Any], List[Dict[str, Any]]]
 ) -> Tuple[List[Dict[str, Any]], int, int]:
@@ -64,19 +65,17 @@ def save_documents_database(
                 skipped += 1
                 continue
 
-            # 1) skip duplikat url dalam batch
             if url in seen_urls:
                 skipped += 1
                 continue
             seen_urls.add(url)
 
-            # 2) skip kalau url sudah ada di DB
-            exists = db.query(Job).filter(Job.url == url).first()
+            exists = db.query(ITJob).filter(ITJob.url == url).first()
             if exists:
                 skipped += 1
                 continue
 
-            db.add(Job(
+            db.add(ITJob(
                 job_id=job_id,
                 url=url,
                 title=item.get("title"),
@@ -109,9 +108,6 @@ def save_documents_database(
         db.close()
 
 
-# =========================
-# 2) SPLITTING / CHUNKING
-# =========================
 def chunk_text(text: str, max_chars: int = 900) -> List[str]:
     if not text:
         return []
@@ -177,18 +173,16 @@ def document_splitting_multi(scrapping_json: List[Dict[str, Any]]) -> List[Dict[
             "source": source,
         }
 
-        # 1) TITLE + COMPANY
         title_company_text = " | ".join([x for x in [title.strip(), company.strip()] if x])
         if title_company_text:
             out_docs.append({
                 "point_id": f"{job_id}:title_company:0",
                 "job_id": job_id,
                 "field": "title_company",
-                "text": f"Posisi: {title}. Perusahaan: {company}.",
+                "text": preprocess_text(f"Posisi: {title}. Perusahaan: {company}."),
                 "payload": {**base_payload, "field": "title_company", "chunk_idx": 0}
             })
 
-        # 2) SKILLS + REQUIREMENTS
         skills_text = ", ".join([s.strip() for s in skills if str(s).strip()])
         req_text = ", ".join([r.strip() for r in requirements_tags if str(r).strip()])
 
@@ -204,11 +198,10 @@ def document_splitting_multi(scrapping_json: List[Dict[str, Any]]) -> List[Dict[
                 "point_id": f"{job_id}:skills_requirements:0",
                 "job_id": job_id,
                 "field": "skills_requirements",
-                "text": document_skills_req,
+                "text": preprocess_text(document_skills_req),
                 "payload": {**base_payload, "field": "skills_requirements", "chunk_idx": 0}
             })
 
-        # 3) DESCRIPTION (chunking)
         desc_chunks = chunk_text(description, max_chars=900)
         for i, ch in enumerate(desc_chunks):
             ch = ch.strip()
@@ -217,11 +210,10 @@ def document_splitting_multi(scrapping_json: List[Dict[str, Any]]) -> List[Dict[
                     "point_id": f"{job_id}:description:{i}",
                     "job_id": job_id,
                     "field": "description",
-                    "text": f"Deskripsi pekerjaan: {ch}",
+                    "text": preprocess_text(f"Deskripsi pekerjaan: {ch}"),
                     "payload": {**base_payload, "field": "description", "chunk_idx": i}
                 })
 
-        # 4) META
         meta_parts = []
         if address:
             meta_parts.append(f"Lokasi: {address}")
@@ -240,82 +232,77 @@ def document_splitting_multi(scrapping_json: List[Dict[str, Any]]) -> List[Dict[
                 "point_id": f"{job_id}:meta:0",
                 "job_id": job_id,
                 "field": "meta",
-                "text": meta_text + ".",
+                "text": preprocess_text(meta_text + "."),
                 "payload": {**base_payload, "field": "meta", "chunk_idx": 0}
             })
 
-        # 5) EDUCATION
         if education.strip():
             out_docs.append({
                 "point_id": f"{job_id}:education:0",
                 "job_id": job_id,
                 "field": "education",
-                "text": f"Pendidikan yang dibutuhkan: {education.strip()}.",
+                "text": preprocess_text(f"Pendidikan yang dibutuhkan: {education.strip()}."),
                 "payload": {**base_payload, "field": "education", "chunk_idx": 0}
             })
 
-        # 6) BENEFITS
         benefits_text = ", ".join([b.strip() for b in benefits if str(b).strip()])
         if benefits_text:
             out_docs.append({
                 "point_id": f"{job_id}:benefits:0",
                 "job_id": job_id,
                 "field": "benefits",
-                "text": f"Benefit yang ditawarkan meliputi: {benefits_text}.",
+                "text": preprocess_text(f"Benefit yang ditawarkan meliputi: {benefits_text}."),
                 "payload": {**base_payload, "field": "benefits", "chunk_idx": 0}
             })
 
     return out_docs
 
 
-# =========================
-# 3) EMBEDDING DENSE (OpenAI)
-# =========================
 def embed_texts_openai(
     texts: List[str],
     *,
     api_key: Optional[str] = None,
-    model: str = "text-embedding-3-small",
+    model: str = None,
 ) -> List[List[float]]:
     if not texts:
         return []
 
-    # Use OpenRouter for Embeddings as requested
-    # Note: User must ensure the model ID in .env (EMBEDDING_MODEL) is valid on OpenRouter
-    api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
-    embedding_model = os.getenv("EMBEDDING_MODEL", "qwen/qwen-embedding") 
-    
-    if not api_key:
-         # Fallback or error
-         raise ValueError("OPENROUTER_API_KEY for embedding is missing")
+    # ── Local Colab /embed endpoint (with batching to prevent timeout) ──
+    from utils.client import is_local, call_local_embed
+    if is_local():
+        try:
+            batch_size = 8
+            all_embeddings = []
+            logger.info("Using local Colab via batches of %d...", batch_size)
+            for i in range(0, len(texts), batch_size):
+                batch_texts = texts[i:i + batch_size]
+                batch_embeddings = call_local_embed(batch_texts)
+                all_embeddings.extend(batch_embeddings)
+            logger.info("Local Colab done: %d vectors", len(all_embeddings))
+            return all_embeddings
+        except Exception as e:
+            logger.warning("Local Colab embedding failed: %s — fallback ke OpenRouter", e)
 
-    client = OpenAI(
-        base_url="https://openrouter.ai/api/v1",
-        api_key=api_key
-    )
-    
-    # OpenRouter embedding interface usually matches OpenAI
+    client = get_embedding_client()
+    embedding_model = get_embedding_model()
+    logger.info("Using %s | model=%s texts=%d", api_source(), embedding_model, len(texts))
+
     try:
         resp = client.embeddings.create(model=embedding_model, input=texts)
         return [d.embedding for d in resp.data]
     except Exception as e:
-        print(f"OpenRouter Embedding Error: {e}")
+        logger.error("Embedding error: %s", e)
         return []
 
 
-# =========================
-# 4) SPARSE MANUAL (NO fastembed)
-# =========================
 def embed_texts_sparse_manual(texts: List[str]) -> List[SparseVector]:
     """
-    Buat sparse vector manual untuk semua text.
+    Buat sparse vector manual untuk semua text (with TF-IDF weighting).
     """
-    return [text_to_sparse_hash_vector(t) for t in texts]
+    idf = get_idf_weights()
+    return [text_to_sparse_hash_vector(t, idf_weights=idf) for t in texts]
 
 
-# =========================
-# 5) ENSURE HYBRID COLLECTION (dense + sparse)
-# =========================
 def ensure_hybrid_collection(
     client: QdrantClient,
     *,
@@ -342,9 +329,25 @@ def ensure_hybrid_collection(
     )
 
 
-# =========================
-# 6) UPSERT QDRANT (HYBRID)
-# =========================
+def _upsert_with_retry(client, collection_name: str, points: list, max_retries: int = 3):
+    """Upsert with retry logic for transient network errors."""
+    import time as _time
+    for attempt in range(max_retries):
+        try:
+            client.upsert(collection_name=collection_name, points=points)
+            logger.info("Batch upserted: %d points", len(points))
+            return True
+        except Exception as e:
+            if attempt < max_retries - 1:
+                wait = 5 * (attempt + 1)
+                logger.warning("Qdrant upsert attempt %d/%d failed: %s — retrying in %ds",
+                               attempt + 1, max_retries, e, wait)
+                _time.sleep(wait)
+            else:
+                logger.error("Qdrant upsert failed after %d attempts: %s", max_retries, e)
+                raise
+
+
 def upsert_embeddings_to_qdrant(
     data: Union[Dict[str, Any], List[Dict[str, Any]]],
     *,
@@ -353,7 +356,7 @@ def upsert_embeddings_to_qdrant(
     api_key: Optional[str] = None,
     dense_size: Optional[int] = None,
     distance: Distance = Distance.COSINE,
-    batch_size: int = 128,
+    batch_size: int = 10,
     recreate_collection: bool = False,
 ) -> Dict[str, int]:
 
@@ -361,14 +364,13 @@ def upsert_embeddings_to_qdrant(
     if not isinstance(items, list) or not items:
         raise ValueError("data harus dict atau list[dict] dan tidak boleh kosong")
 
-    # Determine dense size if not provided
     if dense_size is None:
         first_vec = items[0].get("dense_vector")
         if not isinstance(first_vec, list) or len(first_vec) == 0:
             raise ValueError("dense_size tidak bisa ditentukan: item pertama tidak punya dense_vector yang valid")
         dense_size = len(first_vec)
 
-    client = QdrantClient(url=qdrant_url, api_key=api_key)
+    client = QdrantClient(url=qdrant_url, api_key=api_key, timeout=300)
 
     ensure_hybrid_collection(
         client,
@@ -428,20 +430,17 @@ def upsert_embeddings_to_qdrant(
         )
 
         if len(batch) >= batch_size:
-            client.upsert(collection_name=collection_name, points=batch)
+            _upsert_with_retry(client, collection_name, batch)
             inserted += len(batch)
             batch = []
 
     if batch:
-        client.upsert(collection_name=collection_name, points=batch)
+        _upsert_with_retry(client, collection_name, batch)
         inserted += len(batch)
 
     return {"inserted": inserted, "skipped": skipped}
 
 
-# =========================
-# 7) PIPELINE UTAMA: DB -> Split -> Dense+Sparse -> Qdrant
-# =========================
 def store_jobs_pipeline(
     payload: Union[Dict[str, Any], List[Dict[str, Any]]],
     *,
@@ -465,14 +464,12 @@ def store_jobs_pipeline(
     docs = document_splitting_multi(inserted_jobs)
     texts = [d["text"] for d in docs]
 
-    # Dense (OpenAI)
     dense_vectors = embed_texts_openai(
         texts,
         api_key=openai_api_key,
         model=embedding_model,
     )
 
-    # Sparse (manual)
     sparse_vectors = embed_texts_sparse_manual(texts)
 
     embedded_docs: List[Dict[str, Any]] = []
@@ -494,6 +491,8 @@ def store_jobs_pipeline(
         dense_size=len(dense_vectors[0]) if dense_vectors else None,
         recreate_collection=recreate_collection,
     )
+
+    invalidate_idf_cache()
 
     return {
         "db": {"inserted": db_inserted, "skipped": db_skipped},

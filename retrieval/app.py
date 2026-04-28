@@ -5,46 +5,41 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 from qdrant_client import QdrantClient, models
 
-# Import relative jika dijalankan sebagai package
 from .hybrid import embed_openai, sparse_query_manual
 from .db_helpers import qdrant_result_to_full_docs
 
-# Import dari parent package (asumsi run dari production root)
-from database.database import SessionLocal  
+from database.database import SessionLocal
 from schema.retrieval import RetrieveRequest, RetrieveResponse
+from auth.utils import get_current_user
+from utils.logger import get_logger
+from utils.errors import describe_error
 
 router = APIRouter(tags=["Retrieval"])
+logger = get_logger(__name__)
 
 QDRANT_URL = os.getenv("QDRANT_URL")
 QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
 QDRANT_COLLECTION = os.getenv("COLLECTION_NAME", "jobsaaa")
-
 PREFETCH_LIMIT = int(os.getenv("PREFETCH_LIMIT", "10"))
 
-if not QDRANT_URL or not QDRANT_API_KEY:
-    # Bisa di-warning saja atau raise error saat startup, 
-    # di sini kita biarkan, tapi akan error kalau dipanggil jika env belum set
-    pass
-
-# Client inisialisasi sebaiknya lazy atau di global
-# Kita pasang di global scope modul ini
 qdrant_client = QdrantClient(
     url=QDRANT_URL,
     api_key=QDRANT_API_KEY,
 )
 
+
 @router.post("/retrieve", response_model=RetrieveResponse)
-def retrieve(req: RetrieveRequest):
+def retrieve(req: RetrieveRequest, _: dict = Depends(get_current_user)):
     try:
-        # 1) build vectors
-        dense_vec = embed_openai(req.query)          # List[float]
-        sparse_vec = sparse_query_manual(req.query)  # SparseVector
+        dense_vec = embed_openai(req.query)
+        if not dense_vec:
+            raise ValueError(
+                "Embedding menghasilkan vector kosong. "
+                "Periksa EMBEDDING_MODEL dan OPENAI_API_KEY di .env."
+            )
 
-        # Jika QDRANT belum terinisialisasi dengan benar (misal env kosong)
-        if not qdrant_client:
-             raise HTTPException(status_code=500, detail="Qdrant client not initialized")
+        sparse_vec = sparse_query_manual(req.query)
 
-        # 2) hybrid query with RRF fusion (fixed prefetch limit)
         qdrant_res = qdrant_client.query_points(
             collection_name=QDRANT_COLLECTION,
             prefetch=[
@@ -65,7 +60,6 @@ def retrieve(req: RetrieveRequest):
             query=models.FusionQuery(fusion=models.Fusion.RRF),
         )
 
-        # 3) fetch full docs from Postgres based on job_id
         db = SessionLocal()
         try:
             docs = qdrant_result_to_full_docs(db, qdrant_res)
@@ -78,5 +72,9 @@ def retrieve(req: RetrieveRequest):
             results=docs,
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        detail = describe_error(e, "Retrieval")
+        logger.error(detail)
+        raise HTTPException(status_code=500, detail=detail)

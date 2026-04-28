@@ -11,8 +11,10 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from bs4 import BeautifulSoup
 
-# Use shared driver factory
 from utils.selenium_driver import create_chrome_driver
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class JobStreetScraper:
@@ -24,11 +26,9 @@ class JobStreetScraper:
         self.query = ""
     
     def _create_driver(self) -> webdriver.Chrome:
-        """Create Chrome WebDriver using shared factory."""
         return create_chrome_driver(headless=self.headless, window_size="1366,768")
     
     def _generate_job_id(self, url: str) -> str:
-        """Generate a unique job ID from the URL."""
         match = re.search(r'/job/(\d+)', url)
         if match:
             return f"jobstreet_{match.group(1)}"
@@ -36,10 +36,9 @@ class JobStreetScraper:
     
     def scrape_job_urls(self, query: str, max_page: int = 2,
                         progress_callback: Callable[[str], None] = None) -> List[str]:
-        """Scrape job listing pages to collect job URLs."""
         
         def log(msg: str):
-            print(msg)
+            logger.info(msg)
             if progress_callback:
                 progress_callback(msg)
         
@@ -47,11 +46,12 @@ class JobStreetScraper:
         query_slug = re.sub(r'\s+', '-', query.strip().lower())
         
         log(f"\n{'='*50}")
-        log(f"📋 SCRAPING JOBSTREET URLS (Query: '{query}', Pages 1-{max_page})")
+        log(f" SCRAPING JOBSTREET URLS (Query: '{query}', Pages 1-{max_page})")
         log(f"{'='*50}")
         
         driver = self._create_driver()
         all_links = []
+        prev_page_links = set()
         
         try:
             for page in range(1, max_page + 1):
@@ -60,54 +60,83 @@ class JobStreetScraper:
                 else:
                     url = f"{self.BASE_URL}/id/{query_slug}-jobs?page={page}"
                 
-                log(f"\n📄 Page {page}/{max_page}: Loading...")
+                log(f"\n Page {page}/{max_page}: Loading {url}")
+                
+                old_elements = None
+                if page > 1:
+                    try:
+                        old_elements = driver.find_elements(By.CSS_SELECTOR, 'a[href*="/id/job/"]')
+                    except:
+                        pass
+                
                 driver.get(url)
                 
-                WebDriverWait(driver, 30).until(
-                    EC.presence_of_element_located((By.TAG_NAME, "body"))
-                )
+                try:
+                    WebDriverWait(driver, 20).until(
+                        EC.presence_of_element_located(
+                            (By.CSS_SELECTOR, 'a[href*="/id/job/"]')
+                        )
+                    )
+                except:
+                    log("    Timeout waiting for job links")
                 
-                time.sleep(6)
+                if page > 1 and old_elements:
+                    try:
+                        from selenium.webdriver.support.expected_conditions import staleness_of
+                        WebDriverWait(driver, 10).until(staleness_of(old_elements[0]))
+                        log("    Page content refreshed")
+                    except:
+                        log("    Waiting extra time for SPA re-render...")
+                        time.sleep(4)
+                
+                time.sleep(4)
+                
+                driver.execute_script("window.scrollTo(0, document.body.scrollHeight * 0.5);")
+                time.sleep(2)
                 
                 soup = BeautifulSoup(driver.page_source, "html.parser")
-                cards = soup.find_all("div", class_="lsj4yq0")
-                log(f"   Found {len(cards)} job cards")
-                
-                if not cards:
-                    log("   ⚠️ No cards found, stopping pagination")
-                    break
                 
                 page_links = []
-                for card in cards:
-                    for a in card.find_all("a", href=True):
-                        href = a["href"]
-                        if href.startswith("/id/job/"):
-                            full_url = urljoin(self.BASE_URL, href)
-                            page_links.append(full_url)
+                for a in soup.find_all("a", href=re.compile(r"^/id/job/\d+")):
+                    href = a["href"]
+                    clean_href = re.sub(r'\?.*$', '', href)
+                    full_url = urljoin(self.BASE_URL, clean_href)
+                    if full_url not in page_links:
+                        page_links.append(full_url)
                 
-                page_links = list(dict.fromkeys(page_links))
-                log(f"   ➜ Job links on page {page}: {len(page_links)}")
+                log(f"   Found {len(page_links)} job links on page {page}")
+                
+                if not page_links:
+                    log("    No job links found, stopping pagination")
+                    break
+                
+                current_set = set(page_links)
+                new_links = [l for l in page_links if l not in all_links]
+                
+                if page > 1 and len(new_links) == 0:
+                    log(f"   No new URLs found (all {len(page_links)} are duplicates), stopping")
+                    break
                 
                 for link in page_links:
                     if link not in all_links:
                         all_links.append(link)
                 
-                log(f"   ✅ Total URLs collected: {len(all_links)}")
+                log(f"    New: {len(new_links)}, Total: {len(all_links)}")
+                prev_page_links = current_set
                 time.sleep(2)
                 
         except Exception as e:
-            log(f"   ❌ Error: {e}")
+            log(f"    Error: {e}")
         finally:
             driver.quit()
         
         log(f"\n{'='*50}")
-        log(f"✅ URL COLLECTION COMPLETE: {len(all_links)} URLs")
+        log(f" URL COLLECTION COMPLETE: {len(all_links)} URLs")
         log(f"{'='*50}")
         
         return all_links
     
     def _scrape_job_detail_with_driver(self, driver: webdriver.Chrome, url: str) -> Dict[str, Any]:
-        """Scrape individual job page using existing driver (optimized)."""
         
         def el_text(el) -> str:
             return el.get_text(" ", strip=True) if el else ""
@@ -148,7 +177,6 @@ class JobStreetScraper:
             except:
                 pass
             
-            # Scroll to load lazy content
             for frac in [0.25, 0.55, 0.85]:
                 driver.execute_script(f"window.scrollTo(0, document.body.scrollHeight * {frac});")
                 time.sleep(0.8)
@@ -180,7 +208,6 @@ class JobStreetScraper:
             "posted_datetime": "",
         }
         
-        # Try JSON-LD first
         jsonld_job = None
         for sc in soup.find_all("script", attrs={"type": "application/ld+json"}):
             raw = (sc.string or "").strip()
@@ -233,7 +260,6 @@ class JobStreetScraper:
             desc = re.sub(r"<.*?>", "", desc, flags=re.S)
             data["description"] = desc.strip()
 
-        # DOM fallback
         if not data["title"]:
             h1 = soup.find("h1")
             data["title"] = el_text(h1)
@@ -262,7 +288,6 @@ class JobStreetScraper:
             desc_el = soup.select_one('[data-automation="jobAdDetails"]') or soup.select_one('[data-testid="job-description"]')
             data["description"] = el_text(desc_el)
 
-        # Skills extraction
         skills = []
         for btn in soup.find_all("button"):
             aria_label = btn.get("aria-label", "")
@@ -319,32 +344,22 @@ class JobStreetScraper:
         
         return data
     
-    def scrape_job_detail(self, url: str) -> Dict[str, Any]:
-        """Scrape individual job page (creates new driver - for single job use)."""
-        driver = self._create_driver()
-        try:
-            return self._scrape_job_detail_with_driver(driver, url)
-        finally:
-            driver.quit()
-    
     def scrape_all_jobs(self, urls: List[str],
                         progress_callback: Callable[[str], None] = None) -> List[Dict[str, Any]]:
-        """Scrape all job details (OPTIMIZED: reuses single driver)."""
         
         def log(msg: str):
-            print(msg)
+            logger.info(msg)
             if progress_callback:
                 progress_callback(msg)
         
         log(f"\n{'='*50}")
-        log(f"🔍 SCRAPING {len(urls)} JOB DETAILS FROM JOBSTREET")
+        log(f" SCRAPING {len(urls)} JOB DETAILS FROM JOBSTREET")
         log(f"{'='*50}")
         
         jobs = []
         successful = 0
         failed = 0
         
-        # Create driver ONCE and reuse for all jobs
         driver = self._create_driver()
         
         try:
@@ -356,24 +371,23 @@ class JobStreetScraper:
                     
                     if "error" in job:
                         failed += 1
-                        log(f"   ❌ Error: {job['error']}")
+                        log(f"    Error: {job['error']}")
                     else:
                         successful += 1
                         jobs.append(job)
-                        log(f"   ✅ {job.get('title', 'N/A')} @ {job.get('company', 'N/A')}")
+                        log(f"    {job.get('title', 'N/A')} @ {job.get('company', 'N/A')}")
                         
                 except Exception as e:
                     failed += 1
-                    log(f"   ❌ Exception: {e}")
+                    log(f"    Exception: {e}")
                 
-                # Rate limiting (reduced since no driver restart overhead)
                 time.sleep(1.5)
         
         finally:
             driver.quit()
         
         log(f"\n{'='*50}")
-        log(f"✅ SCRAPING COMPLETE: {successful}/{len(urls)} successful")
+        log(f" SCRAPING COMPLETE: {successful}/{len(urls)} successful")
         log(f"{'='*50}")
         
         return jobs

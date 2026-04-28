@@ -2,27 +2,22 @@
 Shared Selenium WebDriver factory for all scrapers.
 Creates Chrome driver with anti-detection options.
 """
+import os
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
 
 
 def create_chrome_driver(headless: bool = True, window_size: str = "1920,1080") -> webdriver.Chrome:
-    """
-    Create and configure Chrome WebDriver with anti-detection options.
-    
-    Args:
-        headless: Run browser in headless mode
-        window_size: Browser window size (width,height)
-    
-    Returns:
-        Configured Chrome WebDriver instance
-    """
     chrome_options = Options()
-    
+
+    chrome_bin = os.getenv("CHROME_BIN")
+    if chrome_bin:
+        chrome_options.binary_location = chrome_bin
+
     if headless:
         chrome_options.add_argument("--headless=new")
-    
-    # Anti-detection options
+
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-blink-features=AutomationControlled")
@@ -36,5 +31,8 @@ def create_chrome_driver(headless: bool = True, window_size: str = "1920,1080") 
     chrome_options.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"])
     chrome_options.add_experimental_option("useAutomationExtension", False)
     chrome_options.add_argument("--log-level=3")
-    
-    return webdriver.Chrome(options=chrome_options)
+
+    chromedriver_path = os.getenv("CHROMEDRIVER_PATH")
+    service = Service(executable_path=chromedriver_path) if chromedriver_path else Service()
+
+    return webdriver.Chrome(service=service, options=chrome_options)

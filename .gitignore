@@ -81,6 +81,9 @@ qdrant_data/
 chroma_data/
 vector_store/
 
+# Scripts (one-off utility scripts, not needed in production)
+scripts/
+
 # Scraped data / temp files
 *.csv.bak
 temp/
