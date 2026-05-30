@@ -1,75 +1,91 @@
-"""
-Cached IDF weights for TF-IDF sparse vectors.
-
-Loads IDF from PostgreSQL (all job docs), caches in memory with 1-hour TTL.
-Both store (indexing) and retrieval (querying) use this to get consistent IDF weights.
-"""
 import time
+from dataclasses import dataclass, field
 from typing import Dict, Optional
+
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-_idf_cache: Optional[Dict[str, float]] = None
-_idf_cache_time: float = 0
-_IDF_TTL_SECONDS = 3600
+
+@dataclass
+class BM25Stats:
+    idf: Dict[str, float] = field(default_factory=dict)
+    avgdl: float = 0.0
 
 
-def get_idf_weights(force_refresh: bool = False) -> Dict[str, float]:
-    global _idf_cache, _idf_cache_time
+_cache: Optional[BM25Stats] = None
+_cache_time: float = 0.0
+_TTL_SECONDS = 3600
+
+
+def get_bm25_stats(force_refresh: bool = False) -> BM25Stats:
+    ## hitung parameter
+    global _cache, _cache_time
 
     now = time.time()
-    if not force_refresh and _idf_cache is not None and (now - _idf_cache_time) < _IDF_TTL_SECONDS:
-        return _idf_cache
+    if not force_refresh and _cache is not None and (now - _cache_time) < _TTL_SECONDS:
+        return _cache
 
     from database.database import SessionLocal
     from database.models import DataSkripsi
-    from .sparse import compute_idf
+    from store.helper import document_splitting_multi  # lazy: avoid circular import
+    from .sparse import compute_idf, compute_avgdl
 
     db = SessionLocal()
     try:
-        jobs = db.query(DataSkripsi.title, DataSkripsi.description, DataSkripsi.skills, DataSkripsi.address).all()
-
+        jobs = db.query(DataSkripsi).all()
         if not jobs:
-            _idf_cache = {}
-            _idf_cache_time = now
-            return _idf_cache
+            _cache = BM25Stats()
+            _cache_time = now
+            return _cache
 
-        documents = []
-        for job in jobs:
-            parts = []
-            if job.title:
-                parts.append(str(job.title))
-            if job.description:
-                parts.append(str(job.description))
-            if job.skills:
-                if isinstance(job.skills, list):
-                    parts.append(" ".join(str(s) for s in job.skills))
-                else:
-                    parts.append(str(job.skills))
-            if job.address:
-                parts.append(str(job.address))
-            documents.append(" ".join(parts))
+        job_dicts = [
+            {
+                "job_id": j.job_id, "url": j.url,
+                "title": j.title, "company": j.company, "logo": j.logo,
+                "salary": j.salary, "posted_at": j.posted_at,
+                "work_type": j.work_type, "experience": j.experience,
+                "education": j.education,
+                "requirements_tags": j.requirements_tags,
+                "skills": j.skills, "benefits": j.benefits,
+                "description": j.description, "address": j.address,
+                "source": j.source,
+            }
+            for j in jobs
+        ]
 
-        _idf_cache = compute_idf(documents)
-        _idf_cache_time = now
+        chunks = document_splitting_multi(job_dicts)
+        chunk_texts = [c["text"] for c in chunks]
 
-        logger.info("Computed IDF from %d jobs, %d unique tokens", len(documents), len(_idf_cache))
+        if not chunk_texts:
+            _cache = BM25Stats()
+            _cache_time = now
+            return _cache
 
-        return _idf_cache
+        idf = compute_idf(chunk_texts)
+        avgdl = compute_avgdl(chunk_texts)
+
+        _cache = BM25Stats(idf=idf, avgdl=avgdl)
+        _cache_time = now
+
+        logger.info(
+            "BM25 stats: %d jobs → %d chunks, %d unique tokens, avgdl=%.2f",
+            len(jobs), len(chunks), len(idf), avgdl,
+        )
+        return _cache
 
     except Exception as e:
-        logger.error("Error computing IDF: %s — using empty weights", e)
-        _idf_cache = {}
-        _idf_cache_time = now
-        return _idf_cache
+        logger.error("BM25 stats computation failed: %s — using empty stats", e)
+        _cache = BM25Stats()
+        _cache_time = now
+        return _cache
 
     finally:
         db.close()
 
 
 def invalidate_cache():
-    """Force IDF cache to refresh on next access (call after re-indexing)."""
-    global _idf_cache, _idf_cache_time
-    _idf_cache = None
-    _idf_cache_time = 0
+    """Force BM25 stats to recompute on next access (call after re-indexing)."""
+    global _cache, _cache_time
+    _cache = None
+    _cache_time = 0.0

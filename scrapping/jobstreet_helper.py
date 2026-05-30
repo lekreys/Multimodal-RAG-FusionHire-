@@ -1,18 +1,19 @@
-import time
-import re
-import json
 import hashlib
-from typing import List, Dict, Any, Callable, Optional
-from urllib.parse import urljoin, quote
+import json
+import re
+import time
+from typing import Any, Callable, Dict, List
+from urllib.parse import urljoin
 
+from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from bs4 import BeautifulSoup
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support.expected_conditions import staleness_of
 
-from utils.selenium_driver import create_chrome_driver
 from utils.logger import get_logger
+from utils.selenium_driver import create_chrome_driver
 
 logger = get_logger(__name__)
 
@@ -23,7 +24,6 @@ class JobStreetScraper:
     
     def __init__(self, headless: bool = True):
         self.headless = headless
-        self.query = ""
     
     def _create_driver(self) -> webdriver.Chrome:
         return create_chrome_driver(headless=self.headless, window_size="1366,768")
@@ -35,23 +35,22 @@ class JobStreetScraper:
         return f"jobstreet_{hashlib.md5(url.encode()).hexdigest()[:12]}"
     
     def scrape_job_urls(self, query: str, max_page: int = 2,
-                        progress_callback: Callable[[str], None] = None) -> List[str]:
-        
+                        progress_callback: Callable[[str], None] = None,
+                        max_jobs: int = None) -> List[str]:
+
         def log(msg: str):
             logger.info(msg)
             if progress_callback:
                 progress_callback(msg)
-        
-        self.query = query
+
         query_slug = re.sub(r'\s+', '-', query.strip().lower())
-        
+
         log(f"\n{'='*50}")
-        log(f" SCRAPING JOBSTREET URLS (Query: '{query}', Pages 1-{max_page})")
+        log(f" SCRAPING JOBSTREET URLS (Query: '{query}', Pages 1-{max_page}, max_jobs={max_jobs or 'unlimited'})")
         log(f"{'='*50}")
-        
+
         driver = self._create_driver()
         all_links = []
-        prev_page_links = set()
         
         try:
             for page in range(1, max_page + 1):
@@ -66,26 +65,25 @@ class JobStreetScraper:
                 if page > 1:
                     try:
                         old_elements = driver.find_elements(By.CSS_SELECTOR, 'a[href*="/id/job/"]')
-                    except:
+                    except Exception:
                         pass
-                
+
                 driver.get(url)
-                
+
                 try:
                     WebDriverWait(driver, 20).until(
                         EC.presence_of_element_located(
                             (By.CSS_SELECTOR, 'a[href*="/id/job/"]')
                         )
                     )
-                except:
+                except Exception:
                     log("    Timeout waiting for job links")
                 
                 if page > 1 and old_elements:
                     try:
-                        from selenium.webdriver.support.expected_conditions import staleness_of
                         WebDriverWait(driver, 10).until(staleness_of(old_elements[0]))
                         log("    Page content refreshed")
-                    except:
+                    except Exception:
                         log("    Waiting extra time for SPA re-render...")
                         time.sleep(4)
                 
@@ -105,24 +103,25 @@ class JobStreetScraper:
                         page_links.append(full_url)
                 
                 log(f"   Found {len(page_links)} job links on page {page}")
-                
+
                 if not page_links:
                     log("    No job links found, stopping pagination")
                     break
-                
-                current_set = set(page_links)
+
                 new_links = [l for l in page_links if l not in all_links]
-                
-                if page > 1 and len(new_links) == 0:
+
+                if page > 1 and not new_links:
                     log(f"   No new URLs found (all {len(page_links)} are duplicates), stopping")
                     break
-                
-                for link in page_links:
-                    if link not in all_links:
-                        all_links.append(link)
-                
+
+                all_links.extend(new_links)
+
                 log(f"    New: {len(new_links)}, Total: {len(all_links)}")
-                prev_page_links = current_set
+
+                if max_jobs is not None and len(all_links) >= max_jobs:
+                    log(f"    Reached max_jobs={max_jobs}, stopping pagination")
+                    break
+
                 time.sleep(2)
                 
         except Exception as e:
@@ -174,7 +173,7 @@ class JobStreetScraper:
                 WebDriverWait(driver, 25).until(
                     EC.presence_of_element_located((By.TAG_NAME, "h1"))
                 )
-            except:
+            except Exception:
                 pass
             
             for frac in [0.25, 0.55, 0.85]:
@@ -215,7 +214,7 @@ class JobStreetScraper:
                 continue
             try:
                 parsed = json.loads(raw)
-            except:
+            except json.JSONDecodeError:
                 continue
 
             candidates = [parsed] if isinstance(parsed, dict) else (parsed if isinstance(parsed, list) else [])
@@ -395,9 +394,12 @@ class JobStreetScraper:
 
 def scrape_jobstreet_jobs(query: str, max_page: int = 2,
                           headless: bool = True,
-                          progress_callback: Callable[[str], None] = None) -> List[Dict[str, Any]]:
+                          progress_callback: Callable[[str], None] = None,
+                          max_jobs: int = None) -> List[Dict[str, Any]]:
     """Convenience function to scrape JobStreet jobs."""
     scraper = JobStreetScraper(headless=headless)
-    urls = scraper.scrape_job_urls(query, max_page, progress_callback)
+    urls = scraper.scrape_job_urls(query, max_page, progress_callback, max_jobs=max_jobs)
+    if max_jobs is not None:
+        urls = urls[:max_jobs]
     jobs = scraper.scrape_all_jobs(urls, progress_callback)
     return [j for j in jobs if "error" not in j]

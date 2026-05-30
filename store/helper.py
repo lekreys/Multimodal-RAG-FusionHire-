@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Union, Tuple, Optional
-import os
+import time
 import uuid
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from sqlalchemy.exc import IntegrityError
 
@@ -15,33 +15,27 @@ from qdrant_client.models import (
     PointStruct,
 )
 
-from openai import OpenAI
-
 from database.database import SessionLocal
+from database.models import DataSkripsi
+from utils.client import (
+    api_source,
+    call_local_embed,
+    get_embedding_client,
+    get_embedding_model,
+    is_local,
+)
+from utils.idf_cache import get_bm25_stats, invalidate_cache as invalidate_idf_cache
 from utils.logger import get_logger
+from utils.preprocessing import preprocess_text
+from utils.sparse import bm25_document_vector
 
 logger = get_logger(__name__)
-from database.models import ITJob
-
-from utils.sparse import text_to_sparse_vector as text_to_sparse_hash_vector
-from utils.idf_cache import get_idf_weights, invalidate_cache as invalidate_idf_cache
-from utils.preprocessing import preprocess_text
-from utils.client import (
-    is_local, api_source,
-    call_local_embed,
-    get_embedding_client, get_embedding_model,
-)
 
 
 def save_documents_database(
     payload: Union[Dict[str, Any], List[Dict[str, Any]]]
 ) -> Tuple[List[Dict[str, Any]], int, int]:
-    """
-    Return:
-      inserted_jobs: list job dict yang BERHASIL masuk DB (ini yang di-embed)
-      inserted: jumlah inserted
-      skipped: jumlah skipped
-    """
+
     data = payload.get("data", []) if isinstance(payload, dict) else payload
     if not isinstance(data, list):
         raise ValueError("payload['data'] harus list")
@@ -70,12 +64,12 @@ def save_documents_database(
                 continue
             seen_urls.add(url)
 
-            exists = db.query(ITJob).filter(ITJob.url == url).first()
+            exists = db.query(DataSkripsi).filter(DataSkripsi.url == url).first()
             if exists:
                 skipped += 1
                 continue
 
-            db.add(ITJob(
+            db.add(DataSkripsi(
                 job_id=job_id,
                 url=url,
                 title=item.get("title"),
@@ -258,26 +252,19 @@ def document_splitting_multi(scrapping_json: List[Dict[str, Any]]) -> List[Dict[
     return out_docs
 
 
-def embed_texts_openai(
-    texts: List[str],
-    *,
-    api_key: Optional[str] = None,
-    model: str = None,
-) -> List[List[float]]:
+def embed_texts_openai(texts: List[str]) -> List[List[float]]:
     if not texts:
         return []
 
-    # ── Local Colab /embed endpoint (with batching to prevent timeout) ──
-    from utils.client import is_local, call_local_embed
+    batch_size = 8
+
     if is_local():
         try:
-            batch_size = 8
-            all_embeddings = []
-            logger.info("Using local Colab via batches of %d...", batch_size)
+            logger.info("Embedding via local Colab | batches of %d | total=%d",
+                        batch_size, len(texts))
+            all_embeddings: List[List[float]] = []
             for i in range(0, len(texts), batch_size):
-                batch_texts = texts[i:i + batch_size]
-                batch_embeddings = call_local_embed(batch_texts)
-                all_embeddings.extend(batch_embeddings)
+                all_embeddings.extend(call_local_embed(texts[i:i + batch_size]))
             logger.info("Local Colab done: %d vectors", len(all_embeddings))
             return all_embeddings
         except Exception as e:
@@ -285,22 +272,34 @@ def embed_texts_openai(
 
     client = get_embedding_client()
     embedding_model = get_embedding_model()
-    logger.info("Using %s | model=%s texts=%d", api_source(), embedding_model, len(texts))
+    logger.info("Embedding via OpenRouter | model=%s | batches of %d | total=%d",
+                embedding_model, batch_size, len(texts))
 
+    all_embeddings = []
     try:
-        resp = client.embeddings.create(model=embedding_model, input=texts)
-        return [d.embedding for d in resp.data]
+        for i in range(0, len(texts), batch_size):
+            batch = texts[i:i + batch_size]
+            resp = client.embeddings.create(model=embedding_model, input=batch)
+            all_embeddings.extend(d.embedding for d in resp.data)
+            if (i // batch_size) % 25 == 0:  
+                logger.info("OpenRouter progress: %d/%d vectors",
+                            len(all_embeddings), len(texts))
+        logger.info("OpenRouter done: %d vectors", len(all_embeddings))
+        return all_embeddings
     except Exception as e:
-        logger.error("Embedding error: %s", e)
-        return []
+        logger.error("Embedding error after %d/%d vectors: %s",
+                     len(all_embeddings), len(texts), e)
+        return all_embeddings  
+
 
 
 def embed_texts_sparse_manual(texts: List[str]) -> List[SparseVector]:
-    """
-    Buat sparse vector manual untuk semua text (with TF-IDF weighting).
-    """
-    idf = get_idf_weights()
-    return [text_to_sparse_hash_vector(t, idf_weights=idf) for t in texts]
+    """Build BM25 sparse vectors at indexing side."""
+    stats = get_bm25_stats()
+    return [
+        bm25_document_vector(t, idf_weights=stats.idf, avgdl=stats.avgdl)
+        for t in texts
+    ]
 
 
 def ensure_hybrid_collection(
@@ -330,8 +329,6 @@ def ensure_hybrid_collection(
 
 
 def _upsert_with_retry(client, collection_name: str, points: list, max_retries: int = 3):
-    """Upsert with retry logic for transient network errors."""
-    import time as _time
     for attempt in range(max_retries):
         try:
             client.upsert(collection_name=collection_name, points=points)
@@ -342,7 +339,7 @@ def _upsert_with_retry(client, collection_name: str, points: list, max_retries: 
                 wait = 5 * (attempt + 1)
                 logger.warning("Qdrant upsert attempt %d/%d failed: %s — retrying in %ds",
                                attempt + 1, max_retries, e, wait)
-                _time.sleep(wait)
+                time.sleep(wait)
             else:
                 logger.error("Qdrant upsert failed after %d attempts: %s", max_retries, e)
                 raise
@@ -447,8 +444,6 @@ def store_jobs_pipeline(
     collection_name: str,
     qdrant_url: str,
     qdrant_api_key: Optional[str] = None,
-    embedding_model: str = "text-embedding-3-small",
-    openai_api_key: Optional[str] = None,
     recreate_collection: bool = False,
 ) -> Dict[str, Any]:
 
@@ -464,12 +459,7 @@ def store_jobs_pipeline(
     docs = document_splitting_multi(inserted_jobs)
     texts = [d["text"] for d in docs]
 
-    dense_vectors = embed_texts_openai(
-        texts,
-        api_key=openai_api_key,
-        model=embedding_model,
-    )
-
+    dense_vectors = embed_texts_openai(texts)
     sparse_vectors = embed_texts_sparse_manual(texts)
 
     embedded_docs: List[Dict[str, Any]] = []

@@ -1,34 +1,16 @@
-from sqlalchemy import Column, String, Text, JSON, DateTime, Integer, Boolean, ForeignKey
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+)
 from sqlalchemy.sql import func
+
 from database.database import Base
-
-class Job(Base):
-    __tablename__ = "jobs_docs"
-
-    job_id = Column(String, primary_key=True, index=True)
-
-    url = Column(Text, unique=True, index=True, nullable=False)
-
-    title = Column(Text)
-    company = Column(Text)
-    logo = Column(Text)
-
-    salary = Column(Text)
-    posted_at = Column(Text)
-    work_type = Column(Text)
-    experience = Column(Text)
-    education = Column(Text)
-
-    requirements_tags = Column(JSON)
-    skills = Column(JSON)
-    benefits = Column(JSON)
-
-    description = Column(Text)
-    address = Column(Text)
-
-    source = Column(String, index=True)
-
-    created_at = Column(DateTime, server_default=func.now(), nullable=False)
 
 
 class User(Base):
@@ -42,34 +24,6 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
 
-
-class ITJob(Base):
-    __tablename__ = "it_jobs"
-
-    job_id = Column(String, primary_key=True, index=True)
-
-    url = Column(Text, unique=True, index=True, nullable=False)
-
-    title = Column(Text)
-    company = Column(Text)
-    logo = Column(Text)
-
-    salary = Column(Text)
-    posted_at = Column(Text)
-    work_type = Column(Text)
-    experience = Column(Text)
-    education = Column(Text)
-
-    requirements_tags = Column(JSON)
-    skills = Column(JSON)
-    benefits = Column(JSON)
-
-    description = Column(Text)
-    address = Column(Text)
-
-    source = Column(String, index=True)
-
-    created_at = Column(DateTime, server_default=func.now(), nullable=False)
 
 class Conversation(Base):
     __tablename__ = "conversations"
@@ -87,7 +41,6 @@ class DataSkripsi(Base):
     __tablename__ = "data_skripsi"
 
     job_id = Column(String, primary_key=True, index=True)
-
     url = Column(Text, unique=True, index=True, nullable=False)
 
     title = Column(Text)
@@ -106,7 +59,13 @@ class DataSkripsi(Base):
 
     description = Column(Text)
     address = Column(Text)
-
     source = Column(String, index=True)
 
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
+
+    # ── Job liveness tracking (verifier) ─────────────────────────────────────
+    # Only consumed when FILTER_INACTIVE_JOBS env flag is "true". Default keeps
+    # everything visible so retrieval behaviour stays unchanged.
+    is_active = Column(Boolean, nullable=False, server_default="1", default=True, index=True)
+    last_verified_at = Column(DateTime, nullable=True)
+    failed_check_count = Column(Integer, nullable=False, server_default="0", default=0)

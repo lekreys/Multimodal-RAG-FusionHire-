@@ -32,6 +32,17 @@ def create_chrome_driver(headless: bool = True, window_size: str = "1920,1080") 
     chrome_options.add_experimental_option("useAutomationExtension", False)
     chrome_options.add_argument("--log-level=3")
 
+    # Performance: block images and notifications to speed up page loads.
+    # We only need HTML/text content for scraping, not visual assets.
+    chrome_options.add_argument("--blink-settings=imagesEnabled=false")
+    chrome_options.add_experimental_option(
+        "prefs",
+        {
+            "profile.managed_default_content_settings.images": 2,
+            "profile.default_content_setting_values.notifications": 2,
+        },
+    )
+
     chromedriver_path = os.getenv("CHROMEDRIVER_PATH")
     service = Service(executable_path=chromedriver_path) if chromedriver_path else Service()
 

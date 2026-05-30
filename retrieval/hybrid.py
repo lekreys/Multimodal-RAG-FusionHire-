@@ -1,10 +1,8 @@
-import os
 from typing import List, Union
 
-from utils.sparse import text_to_sparse_vector
-from utils.idf_cache import get_idf_weights
+from utils.sparse import bm25_query_vector
 from utils.client import (
-    is_local, api_source,
+    is_local,
     call_local_embed,
     get_embedding_client, get_embedding_model,
 )
@@ -14,13 +12,12 @@ logger = get_logger(__name__)
 
 
 def sparse_query_manual(text: str):
-    idf = get_idf_weights()
-    return text_to_sparse_vector(text, idf_weights=idf)
+    """BM25 query vector (presence indicator per token)."""
+    return bm25_query_vector(text)
 
 
 def embed_openai(
     texts: Union[str, List[str]],
-    model: str = None,
 ) -> Union[List[float], List[List[float]]]:
 
     is_single = isinstance(texts, str)

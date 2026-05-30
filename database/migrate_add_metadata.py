@@ -1,25 +1,30 @@
 """
-Migration script to add metadata column to conversations table.
+Migration script to add extra_data column to conversations table.
 Run this once to update existing database.
 """
 from sqlalchemy import text
+
 from database.database import engine
+from utils.logger import get_logger, setup_root_logger
+
+setup_root_logger()
+logger = get_logger(__name__)
+
 
 def migrate():
     with engine.connect() as conn:
         try:
-            conn.execute(text("""
-                ALTER TABLE conversations 
-                ADD COLUMN extra_data JSON
-            """))
+            conn.execute(text("ALTER TABLE conversations ADD COLUMN extra_data JSON"))
             conn.commit()
-            print("✅ Migration successful: Added extra_data column to conversations table")
+            logger.info("Migration successful: added extra_data column to conversations")
         except Exception as e:
-            if "duplicate column name" in str(e).lower() or "already exists" in str(e).lower():
-                print("ℹ️  Column extra_data already exists, skipping migration")
+            msg = str(e).lower()
+            if "duplicate column name" in msg or "already exists" in msg:
+                logger.info("Column extra_data already exists, skipping migration")
             else:
-                print(f"❌ Migration failed: {e}")
+                logger.error("Migration failed: %s", e)
                 raise
+
 
 if __name__ == "__main__":
     migrate()

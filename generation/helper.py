@@ -1,19 +1,47 @@
 import os
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
+
 from dotenv import load_dotenv
-from .prompt import SYSTEM_PROMPT
-from .general_prompt import GENERAL_SYSTEM_PROMPT
+
+from database.database import SessionLocal
+from database.models import Conversation
 from utils.client import (
-    is_local, api_source, get_llm_model,
+    api_source,
     call_local_generate,
+    get_llm_model,
     get_openrouter_client,
+    is_local,
 )
-from utils.logger import get_logger
 from utils.errors import describe_error
+from utils.logger import get_logger
+
+from .general_prompt import GENERAL_SYSTEM_PROMPT
+from .prompt import SYSTEM_PROMPT
 
 load_dotenv()
 
 logger = get_logger(__name__)
+
+REFUSAL_MESSAGE = (
+    "Maaf, aku hanya bisa bantu seputar pencarian lowongan kerja dan topik dunia kerja.\n\n"
+    "Coba tanya seperti:\n"
+    "- \"Lowongan Python developer di Jakarta\"\n"
+    "- \"Cari kerja UI designer remote\"\n"
+    "- \"Tips membuat CV yang menarik\"\n"
+    "- \"Cara mempersiapkan wawancara kerja\""
+)
+
+
+def generate_refusal_answer(
+    query: str,
+    conversation_id: Optional[str] = None,
+    user_id: Optional[int] = None,
+) -> str:
+    """Hardcoded refusal untuk query out-of-scope. Tidak memanggil LLM — konsisten & hemat token."""
+    logger.info("generate_refusal_answer | hardcoded refusal for out_of_scope query")
+    if conversation_id:
+        _save_conversation(conversation_id, query, REFUSAL_MESSAGE, None, user_id, intent="out_of_scope")
+    return REFUSAL_MESSAGE
 
 
 def format_jobs_context(jobs: List[Dict[str, Any]]) -> str:
@@ -32,7 +60,8 @@ def format_jobs_context(jobs: List[Dict[str, Any]]) -> str:
         else:
             skills_str = str(skills)
 
-        desc = (job.get("description") or "")[:500] + "..."
+        desc_raw = job.get("description") or ""
+        desc = desc_raw[:500] + "..." if len(desc_raw) > 500 else desc_raw
         url = job.get("url", "#")
         job_id = job.get("job_id", "")
 
@@ -58,9 +87,6 @@ def generate_answer(
     conversation_id: str = None,
     user_id: Optional[int] = None,
 ) -> str:
-    from database.database import SessionLocal
-    from database.models import Conversation
-
     context_str = format_jobs_context(retrieved_jobs)
     logger.info("generate_answer | source=%s model=%s", api_source(), get_llm_model())
 
@@ -75,7 +101,7 @@ def generate_answer(
                 max_new_tokens=1024,
             )
             if conversation_id:
-                _save_conversation(conversation_id, query, answer, retrieved_jobs, user_id)
+                _save_conversation(conversation_id, query, answer, retrieved_jobs, user_id, intent="job_search")
             return answer
         except Exception as e:
             err_msg = describe_error(e, "Local API")
@@ -121,7 +147,7 @@ def generate_answer(
         assistant_message = response.choices[0].message.content
 
         if conversation_id:
-            _save_conversation(conversation_id, query, assistant_message, retrieved_jobs, user_id)
+            _save_conversation(conversation_id, query, assistant_message, retrieved_jobs, user_id, intent="job_search")
 
         return assistant_message
     except Exception as e:
@@ -135,9 +161,6 @@ def generate_general_answer(
     conversation_id: str = None,
     user_id: Optional[int] = None,
 ) -> str:
-    from database.database import SessionLocal
-    from database.models import Conversation
-
     logger.info("generate_general_answer | source=%s model=%s", api_source(), get_llm_model())
 
     # ── Local Colab API (dengan fallback ke OpenRouter jika gagal) ──────────
@@ -151,7 +174,7 @@ def generate_general_answer(
                 max_new_tokens=1024,
             )
             if conversation_id:
-                _save_conversation(conversation_id, query, answer, None, user_id)
+                _save_conversation(conversation_id, query, answer, None, user_id, intent="work_related")
             return answer
         except Exception as e:
             err_msg = describe_error(e, "Local API")
@@ -192,7 +215,7 @@ def generate_general_answer(
         assistant_message = response.choices[0].message.content
 
         if conversation_id:
-            _save_conversation(conversation_id, query, assistant_message, None, user_id)
+            _save_conversation(conversation_id, query, assistant_message, None, user_id, intent="work_related")
 
         return assistant_message
     except Exception as e:
@@ -207,10 +230,8 @@ def _save_conversation(
     answer: str,
     retrieved_jobs: Optional[List[Dict[str, Any]]] = None,
     user_id: Optional[int] = None,
+    intent: Optional[str] = None,
 ):
-    from database.database import SessionLocal
-    from database.models import Conversation
-
     db = SessionLocal()
     try:
         db.add(Conversation(
@@ -219,13 +240,17 @@ def _save_conversation(
             role="user",
             content=query,
         ))
-        extra = {"retrieved_jobs": retrieved_jobs} if retrieved_jobs else {}
+        extra_data: Dict[str, Any] = {}
+        if retrieved_jobs:
+            extra_data["retrieved_jobs"] = retrieved_jobs
+        if intent:
+            extra_data["intent"] = intent
         db.add(Conversation(
             conversation_id=conversation_id,
             user_id=user_id,
             role="assistant",
             content=answer,
-            extra_data=extra if extra else None,
+            extra_data=extra_data or None,
         ))
         db.commit()
     except Exception as e:

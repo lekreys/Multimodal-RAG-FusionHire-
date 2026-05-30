@@ -1,19 +1,17 @@
-from fastapi import FastAPI
 from dotenv import load_dotenv
-import os
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 load_dotenv()
 
 from utils.logger import setup_root_logger
 setup_root_logger()
 
+from auth.app import router as auth_router
+from generation.app import router as generation_router
+from retrieval.app import router as retrieval_router
 from scrapping.app import router as scrapping_router
 from store.app import router as store_router
-from retrieval.app import router as retrieval_router
-from generation.app import router as generation_router
-from auth.app import router as auth_router
-
-from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(
     title="Job Search RAG API",

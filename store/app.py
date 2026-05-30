@@ -1,28 +1,37 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
-from auth.utils import require_admin
-from .helper import store_jobs_pipeline
-from .vision import extract_job_from_image, extract_job_from_image_debug, NotJobPostingError
-from .storage import upload_image_to_supabase
-from utils.logger import get_logger
-from utils.errors import describe_error
 import os
+
 from dotenv import load_dotenv
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+
+from auth.utils import require_admin
+from utils.errors import describe_error
+from utils.logger import get_logger
+
+from .helper import store_jobs_pipeline
+from .storage import upload_image_to_supabase
+from .vision import (
+    NotJobPostingError,
+    extract_job_from_image,
+    extract_job_from_image_debug,
+)
 
 load_dotenv()
 
 logger = get_logger(__name__)
 router = APIRouter(tags=["Store"])
 
+COLLECTION_NAME = os.getenv("COLLECTION_NAME", "final_skripsi_collection_bm25")
+QDRANT_URL      = os.getenv("QDRANT_URL")
+QDRANT_API_KEY  = os.getenv("QDRANT_API_KEY")
+
 
 @router.post("/store")
 def store(payload: dict, _: dict = Depends(require_admin)):
     return store_jobs_pipeline(
         payload,
-        collection_name=os.getenv("COLLECTION_NAME"),
-        qdrant_url=os.getenv("QDRANT_URL"),
-        qdrant_api_key=os.getenv("QDRANT_API_KEY"),
-        embedding_model=os.getenv("EMBEDDING_MODEL"),
-        openai_api_key=os.getenv("OPENAI_API_KEY"),
+        collection_name=COLLECTION_NAME,
+        qdrant_url=QDRANT_URL,
+        qdrant_api_key=QDRANT_API_KEY,
     )
 
 
@@ -91,11 +100,9 @@ async def upload_image(file: UploadFile = File(...), _: dict = Depends(require_a
         logger.info("Storing to pipeline...")
         return store_jobs_pipeline(
             payload,
-            collection_name=os.getenv("COLLECTION_NAME"),
-            qdrant_url=os.getenv("QDRANT_URL"),
-            qdrant_api_key=os.getenv("QDRANT_API_KEY"),
-            embedding_model=os.getenv("EMBEDDING_MODEL"),
-            openai_api_key=os.getenv("OPENAI_API_KEY"),
+            collection_name=COLLECTION_NAME,
+            qdrant_url=QDRANT_URL,
+            qdrant_api_key=QDRANT_API_KEY,
         )
     except HTTPException:
         raise

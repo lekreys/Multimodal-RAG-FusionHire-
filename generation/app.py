@@ -1,23 +1,23 @@
-import sys
-import os
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel as _BaseModel
+from sqlalchemy import desc, func
 
+from auth.utils import get_current_user
+from database.database import SessionLocal
+from database.models import Conversation
 from schema.generation import (
+    ConversationListItem,
+    ConversationListResponse,
     GenerateRequest,
     GenerateResponse,
     HistoryResponse,
     MessageResponse,
-    ConversationListResponse,
-    ConversationListItem,
 )
-from .helper import generate_answer, generate_general_answer
-from .intent import detect_intent
-from database.database import SessionLocal
-from database.models import Conversation
-from auth.utils import get_current_user
-from utils.logger import get_logger
 from utils.errors import describe_error
-from pydantic import BaseModel as _BaseModel
+from utils.logger import get_logger
+
+from .helper import generate_answer, generate_general_answer, generate_refusal_answer
+from .intent import detect_intent
 
 router = APIRouter(tags=["Generation"])
 logger = get_logger(__name__)
@@ -50,6 +50,22 @@ async def generate_general(request: GenerateRequest, current_user: dict = Depend
         return {"answer": answer}
     except Exception as e:
         detail = describe_error(e, "Generate/General")
+        logger.error(detail)
+        raise HTTPException(status_code=500, detail=detail)
+
+
+@router.post("/generate/refuse")
+async def generate_refuse(request: GenerateRequest, current_user: dict = Depends(get_current_user)):
+    """Hardcoded refusal untuk query out-of-scope. Tidak panggil LLM."""
+    try:
+        answer = generate_refusal_answer(
+            request.query,
+            request.conversation_id,
+            user_id=current_user["user_id"],
+        )
+        return {"answer": answer}
+    except Exception as e:
+        detail = describe_error(e, "Generate/Refuse")
         logger.error(detail)
         raise HTTPException(status_code=500, detail=detail)
 
@@ -94,8 +110,6 @@ async def get_history(conversation_id: str, current_user: dict = Depends(get_cur
 
 @router.get("/conversations", response_model=ConversationListResponse)
 async def get_all_conversations(current_user: dict = Depends(get_current_user)):
-    from sqlalchemy import func, desc
-
     db = SessionLocal()
     try:
         conversations_data = (

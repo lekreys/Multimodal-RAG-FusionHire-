@@ -1,18 +1,18 @@
-import time
-import re
 import json
+import re
+import time
 from pathlib import Path
-from typing import List, Dict, Any, Callable, Optional
+from typing import Any, Callable, Dict, List
+from urllib.parse import quote
 
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 from bs4 import BeautifulSoup
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import WebDriverWait
 
-from utils.selenium_driver import create_chrome_driver
 from utils.logger import get_logger
+from utils.selenium_driver import create_chrome_driver
 
 logger = get_logger(__name__)
 
@@ -49,12 +49,12 @@ class GlintsScraper:
                 if "expirationDate" in c:
                     try:
                         cookie["expiry"] = int(c["expirationDate"])
-                    except:
+                    except Exception:
                         pass
                 
                 try:
                     driver.add_cookie(cookie)
-                except:
+                except Exception:
                     pass
             
             driver.get("https://glints.com/")
@@ -67,20 +67,20 @@ class GlintsScraper:
             logger.error("Error loading cookies: %s", e)
     
     def scrape_job_urls(self, start_page: int = 1, end_page: int = 2,
-                        progress_callback: Callable[[str], None] = None) -> List[str]:
+                        progress_callback: Callable[[str], None] = None,
+                        max_jobs: int = None) -> List[str]:
 
         def log(msg: str):
             logger.info(msg)
             if progress_callback:
                 progress_callback(msg)
-        
-        from urllib.parse import quote
+
         params = f"keyword={quote(self.keyword)}&country=ID&locationName=All+Cities%2FProvinces"
-        
+
         log(f"\n{'='*50}")
-        log(f" SCRAPING JOB URLS (Keyword: '{self.keyword}', Pages {start_page}-{end_page})")
+        log(f" SCRAPING JOB URLS (Keyword: '{self.keyword}', Pages {start_page}-{end_page}, max_jobs={max_jobs or 'unlimited'})")
         log(f"{'='*50}")
-        
+
         driver = self._create_driver()
         all_links = set()
         
@@ -92,8 +92,17 @@ class GlintsScraper:
                 url = f"{self.BASE_URL}?{params}&page={page}"
                 log(f"\n Page {page}/{end_page}: Loading...")
                 driver.get(url)
-                time.sleep(6)
-                
+
+                # Wait for job cards instead of fixed sleep — returns as soon as DOM is ready.
+                try:
+                    WebDriverWait(driver, 15).until(
+                        EC.presence_of_element_located(
+                            (By.CSS_SELECTOR, 'div[data-glints-tracking-view-element-id]')
+                        )
+                    )
+                except Exception:
+                    log("   Timeout waiting for job cards (page may be empty or blocked)")
+
                 if "/login" in driver.current_url:
                     log("   Redirected to login! Cookies may be expired.")
                     break
@@ -107,13 +116,20 @@ class GlintsScraper:
                     title_tag = card.find("h2")
                     if not title_tag:
                         continue
-                    
+
                     title = title_tag.get_text(strip=True)
                     slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
                     link = f"https://glints.com/id/opportunities/jobs/{slug}/{job_id}"
                     all_links.add(link)
-                
+
+                    if max_jobs is not None and len(all_links) >= max_jobs:
+                        break
+
                 log(f"    Total URLs collected: {len(all_links)}")
+
+                if max_jobs is not None and len(all_links) >= max_jobs:
+                    log(f"    Reached max_jobs={max_jobs}, stopping pagination")
+                    break
             
         finally:
             driver.quit()
@@ -131,7 +147,6 @@ class GlintsScraper:
             
             wait = WebDriverWait(driver, 20)
             wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, 'h1[aria-label="Job Title"]')))
-            time.sleep(2)
             
             soup = BeautifulSoup(driver.page_source, "html.parser")
             
@@ -297,9 +312,12 @@ class GlintsScraper:
 def scrape_glints_jobs(start_page: int = 1, end_page: int = 2,
                        keyword: str = "it",
                        cookie_file: str = None, headless: bool = True,
-                       progress_callback: Callable[[str], None] = None) -> List[Dict[str, Any]]:
-    
+                       progress_callback: Callable[[str], None] = None,
+                       max_jobs: int = None) -> List[Dict[str, Any]]:
+
     scraper = GlintsScraper(cookie_file=cookie_file, headless=headless, keyword=keyword)
-    urls = scraper.scrape_job_urls(start_page, end_page, progress_callback)
+    urls = scraper.scrape_job_urls(start_page, end_page, progress_callback, max_jobs=max_jobs)
+    if max_jobs is not None:
+        urls = urls[:max_jobs]
     jobs = scraper.scrape_all_jobs(urls, progress_callback)
     return [j for j in jobs if "error" not in j]

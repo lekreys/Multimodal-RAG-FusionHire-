@@ -1,17 +1,17 @@
-import time
-import re
 import hashlib
-from typing import List, Dict, Any, Callable, Optional
-from pathlib import Path
+import re
+import time
+from typing import Any, Callable, Dict, List
+from urllib.parse import quote
 
+from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from bs4 import BeautifulSoup
+from selenium.webdriver.support.ui import WebDriverWait
 
-from utils.selenium_driver import create_chrome_driver
 from utils.logger import get_logger
+from utils.selenium_driver import create_chrome_driver
 
 logger = get_logger(__name__)
 
@@ -22,7 +22,6 @@ class LokerScraper:
     
     def __init__(self, headless: bool = True):
         self.headless = headless
-        self.query = ""
     
     def _create_driver(self) -> webdriver.Chrome:
         return create_chrome_driver(headless=self.headless, window_size="1920,1080")
@@ -35,18 +34,16 @@ class LokerScraper:
         return f"loker_{hashlib.md5(url.encode()).hexdigest()[:12]}"
     
     def scrape_job_urls(self, query: str, max_page: int = 2,
-                        progress_callback: Callable[[str], None] = None) -> List[str]:
+                        progress_callback: Callable[[str], None] = None,
+                        max_jobs: int = None) -> List[str]:
 
         def log(msg: str):
             logger.info(msg)
             if progress_callback:
                 progress_callback(msg)
-        
-        from urllib.parse import quote
-        self.query = query
-        
+
         log(f"\n{'='*50}")
-        log(f" SCRAPING LOKER.ID URLS (Query: '{query}', Pages 1-{max_page})")
+        log(f" SCRAPING LOKER.ID URLS (Query: '{query}', Pages 1-{max_page}, max_jobs={max_jobs or 'unlimited'})")
         log(f"{'='*50}")
         
         driver = self._create_driver()
@@ -84,10 +81,18 @@ class LokerScraper:
                         href = a_tag.get_attribute("href")
                         if href and href not in all_links:
                             all_links.append(href)
-                    except:
-                        pass
-                
+                    except Exception:
+                        continue
+
+                    if max_jobs is not None and len(all_links) >= max_jobs:
+                        break
+
                 log(f"    Collected {len(all_links)} unique URLs so far")
+
+                if max_jobs is not None and len(all_links) >= max_jobs:
+                    log(f"    Reached max_jobs={max_jobs}, stopping pagination")
+                    break
+
                 time.sleep(2)
                 
         except Exception as e:
@@ -320,9 +325,12 @@ class LokerScraper:
 
 def scrape_loker_jobs(query: str, max_page: int = 2,
                       headless: bool = True,
-                      progress_callback: Callable[[str], None] = None) -> List[Dict[str, Any]]:
+                      progress_callback: Callable[[str], None] = None,
+                      max_jobs: int = None) -> List[Dict[str, Any]]:
 
     scraper = LokerScraper(headless=headless)
-    urls = scraper.scrape_job_urls(query, max_page, progress_callback)
+    urls = scraper.scrape_job_urls(query, max_page, progress_callback, max_jobs=max_jobs)
+    if max_jobs is not None:
+        urls = urls[:max_jobs]
     jobs = scraper.scrape_all_jobs(urls, progress_callback)
     return [j for j in jobs if "error" not in j]

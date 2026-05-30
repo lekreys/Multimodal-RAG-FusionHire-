@@ -1,7 +1,15 @@
+import os
 from typing import Any, Dict, List
 from sqlalchemy.orm import Session
 
 from database.models import DataSkripsi
+
+
+# Feature flag — when "true", hide jobs whose source listing has been confirmed
+# closed by scrapping/verifier.py (DataSkripsi.is_active=False). Default off so
+# nothing changes for thesis evaluation runs.
+def _filter_inactive_enabled() -> bool:
+    return os.getenv("FILTER_INACTIVE_JOBS", "false").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def qdrant_result_to_full_docs(db: Session, qdrant_result: Any) -> List[Dict[str, Any]]:
@@ -30,7 +38,10 @@ def qdrant_result_to_full_docs(db: Session, qdrant_result: Any) -> List[Dict[str
     if not ordered_job_ids:
         return []
 
-    jobs: List[DataSkripsi] = db.query(DataSkripsi).filter(DataSkripsi.job_id.in_(ordered_job_ids)).all()
+    query = db.query(DataSkripsi).filter(DataSkripsi.job_id.in_(ordered_job_ids))
+    if _filter_inactive_enabled():
+        query = query.filter(DataSkripsi.is_active.is_(True))
+    jobs: List[DataSkripsi] = query.all()
 
     def job_to_dict(job: DataSkripsi) -> Dict[str, Any]:
         return {

@@ -1,15 +1,4 @@
-"""
-Text Preprocessing Utilities for RAG Pipeline.
 
-Preprocessing steps applied to text before embedding:
-1. Remove URLs
-2. Remove HTML tags
-3. Case Folding (lowercase)
-4. Normalize whitespace
-
-Note: These are applied to embedding text only. Raw data in PostgreSQL
-remains unchanged for display purposes.
-"""
 import re
 from typing import List
 
